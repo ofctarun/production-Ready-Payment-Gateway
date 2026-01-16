@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middlewares/auth';
-import { createPayment, capturePayment } from '../controllers/paymentController';
-// import { createRefund, getRefund } from '../controllers/paymentController';
+import { createPayment, capturePayment, createRefund, getRefund } from '../controllers/paymentController';
 import { getWebhooks, retryWebhook } from '../controllers/webhookController';
 import { getJobStatus } from '../controllers/testController';
 
@@ -13,8 +12,8 @@ router.get('/test/jobs/status', getJobStatus);
 // Authenticated Endpoints
 router.post('/payments', authenticate, createPayment);
 router.post('/payments/:paymentId/capture', authenticate, capturePayment);
-// router.post('/payments/:paymentId/refunds', authenticate, createRefund);
-// router.get('/refunds/:refundId', authenticate, getRefund);
+router.post('/payments/:paymentId/refunds', authenticate, createRefund);
+router.get('/refunds/:refundId', authenticate, getRefund);
 router.get('/webhooks', authenticate, getWebhooks);
 router.post('/webhooks/:webhookId/retry', authenticate, retryWebhook);
 
