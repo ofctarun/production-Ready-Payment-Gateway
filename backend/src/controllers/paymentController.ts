@@ -8,6 +8,33 @@ import { AuthRequest } from '../middlewares/auth';
 const paymentQueue = new Queue('payment-queue', { connection: redisConnection });
 // const refundQueue = new Queue('refund-queue', { connection: redisConnection });
 
+export const capturePayment = async (req: AuthRequest, res: Response) => {
+  try {
+    const { paymentId } = req.params;
+    const { amount } = req.body; // Not used in logic but present in request
+    const merchantId = req.merchant.id;
+
+    // Check payment
+    const paymentRes = await query('SELECT * FROM payments WHERE id = $1 AND merchant_id = $2', [paymentId, merchantId]);
+    if (paymentRes.rows.length === 0) return res.status(404).json({ error: 'Payment not found' });
+    const payment = paymentRes.rows[0];
+
+    if (payment.status !== 'success') {
+      return res.status(400).json({
+        error: { code: 'BAD_REQUEST_ERROR', description: 'Payment not in capturable state' }
+      });
+    }
+
+    await query('UPDATE payments SET captured = true, updated_at = NOW() WHERE id = $1', [paymentId]);
+
+    const updatedPayment = { ...payment, captured: true, updated_at: new Date() }; // Approximation for response
+    res.json(updatedPayment);
+
+  } catch (error) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
 export const createPayment = async (req: AuthRequest, res: Response) => {
   try {
     const { order_id, amount, currency, method, vpa } = req.body;
