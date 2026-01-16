@@ -6,7 +6,7 @@ import { query } from '../config/db';
 import { AuthRequest } from '../middlewares/auth';
 
 const paymentQueue = new Queue('payment-queue', { connection: redisConnection });
-// const refundQueue = new Queue('refund-queue', { connection: redisConnection });
+const refundQueue = new Queue('refund-queue', { connection: redisConnection });
 
 export const capturePayment = async (req: AuthRequest, res: Response) => {
   try {
@@ -103,4 +103,64 @@ export const createPayment = async (req: AuthRequest, res: Response) => {
     console.error('Create Payment Error:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
+};
+
+export const createRefund = async (req: AuthRequest, res: Response) => {
+  try {
+    const { paymentId } = req.params;
+    const { amount, reason } = req.body;
+    const merchantId = req.merchant.id;
+
+    // Verify payment
+    const paymentRes = await query('SELECT * FROM payments WHERE id = $1 AND merchant_id = $2', [paymentId, merchantId]);
+    if (paymentRes.rows.length === 0) return res.status(404).json({ error: 'Payment not found' });
+    const payment = paymentRes.rows[0];
+
+    if (payment.status !== 'success') {
+      return res.status(400).json({ error: { code: 'BAD_REQUEST_ERROR', description: 'Payment not in refundable state' } });
+    }
+
+    // Calculate total refunded
+    const refundsRes = await query(
+      "SELECT COALESCE(SUM(amount), 0) as total FROM refunds WHERE payment_id = $1 AND status IN ('processed', 'pending')",
+      [paymentId]
+    );
+    const totalRefunded = parseInt(refundsRes.rows[0].total);
+
+    if (amount > (payment.amount - totalRefunded)) {
+      return res.status(400).json({ error: { code: 'BAD_REQUEST_ERROR', description: 'Refund amount exceeds available amount' } });
+    }
+
+    // Create Refund
+    const refundId = `rfnd_${uuidv4().replace(/-/g, '').substring(0, 16)}`;
+    const now = new Date();
+
+    await query(
+      'INSERT INTO refunds (id, payment_id, merchant_id, amount, reason, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [refundId, paymentId, merchantId, amount, reason, 'pending', now]
+    );
+
+    // Enqueue Job
+    await refundQueue.add('process-refund', { refundId });
+
+    res.status(201).json({
+      id: refundId,
+      payment_id: paymentId,
+      amount,
+      reason,
+      status: 'pending',
+      created_at: now
+    });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
+
+export const getRefund = async (req: AuthRequest, res: Response) => {
+  const { refundId } = req.params;
+  const result = await query('SELECT * FROM refunds WHERE id = $1', [refundId]);
+  if (result.rows.length === 0) return res.status(404).json({ error: 'Refund not found' });
+  res.json(result.rows[0]);
 };
