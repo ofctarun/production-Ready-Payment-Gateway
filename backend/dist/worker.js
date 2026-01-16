@@ -1,0 +1,17 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const bullmq_1 = require("bullmq");
+const redis_1 = require("./config/redis");
+const processPayment_1 = require("./jobs/processPayment");
+const deliverWebhook_1 = require("./jobs/deliverWebhook");
+const processRefund_1 = require("./jobs/processRefund");
+console.log('Starting Worker Service...');
+const paymentWorker = new bullmq_1.Worker('payment-queue', processPayment_1.processPayment, { connection: redis_1.workerConnection });
+const webhookWorker = new bullmq_1.Worker('webhook-queue', deliverWebhook_1.deliverWebhook, { connection: redis_1.workerConnection });
+const refundWorker = new bullmq_1.Worker('refund-queue', processRefund_1.processRefund, { connection: redis_1.workerConnection });
+paymentWorker.on('completed', job => console.log(`Payment Job ${job.id} completed`));
+paymentWorker.on('failed', (job, err) => console.log(`Payment Job ${job === null || job === void 0 ? void 0 : job.id} failed: ${err.message}`));
+webhookWorker.on('completed', job => console.log(`Webhook Job ${job.id} completed`));
+webhookWorker.on('failed', (job, err) => console.log(`Webhook Job ${job === null || job === void 0 ? void 0 : job.id} failed: ${err.message}`));
+refundWorker.on('completed', job => console.log(`Refund Job ${job.id} completed`));
+refundWorker.on('failed', (job, err) => console.log(`Refund Job ${job === null || job === void 0 ? void 0 : job.id} failed: ${err.message}`));
